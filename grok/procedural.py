@@ -4,7 +4,7 @@ import time
 from colorama import Fore, Style
 
 from .settings import CONFIG
-from .output import Logger, emit_banner
+from .output import Logger, Dashboard, emit_banner
 from .builder import compose_identity
 from .mail_access import create_temp_address, retrieve_inbox, harvest_code
 from .navigator import ManagedSession
@@ -13,10 +13,12 @@ from .captcha_bypasser import bypass_challenge
 from .archiver import persist_account
 
 
-async def run_single(sequence: int, total: int) -> tuple[bool, float]:
+async def run_single(
+    sequence: int, total: int, dashboard: Dashboard
+) -> tuple[bool, float]:
     """Execute one full registration cycle.  Returns (succeeded, elapsed)."""
     stamp = f"[{sequence}/{total}]"
-    log = Logger(stamp)
+    log = Logger(stamp, thread_index=sequence).bind(dashboard)
     started = time.time()
 
     # Build persona
@@ -28,6 +30,8 @@ async def run_single(sequence: int, total: int) -> tuple[bool, float]:
     inbox_raw = create_temp_address()
     if not inbox_raw or "email" not in inbox_raw:
         log.fail("Could not obtain mailbox")
+        dashboard.advance(success=False)
+        dashboard.clear_thread(sequence)
         return False, time.time() - started
     inbox = inbox_raw["email"]
     log.confirm(f"Mailbox: {inbox}")
@@ -44,6 +48,8 @@ async def run_single(sequence: int, total: int) -> tuple[bool, float]:
         dispatch = await in_page_post(tab, CONFIG.dispatch_code, {"email": inbox})
         if not dispatch or dispatch.get("status") != 200:
             log.fail(f"Dispatch rejected: {dispatch}")
+            dashboard.advance(success=False)
+            dashboard.clear_thread(sequence)
             return False, time.time() - started
         log.confirm("Verification dispatched")
 
@@ -52,7 +58,7 @@ async def run_single(sequence: int, total: int) -> tuple[bool, float]:
         while consumed < CONFIG.poll_deadline:
             await asyncio.sleep(CONFIG.poll_delay)
             consumed += CONFIG.poll_delay
-            log.raw(f"  [{int(consumed)}s] Scanning inbox...")
+            log.progress(f"Scanning inbox... ({int(consumed)}s)")
             mail = retrieve_inbox(inbox)
             secret_token = harvest_code(mail)
             if secret_token:
@@ -61,12 +67,16 @@ async def run_single(sequence: int, total: int) -> tuple[bool, float]:
 
         if not secret_token:
             log.fail("Token never arrived")
+            dashboard.advance(success=False)
+            dashboard.clear_thread(sequence)
             return False, time.time() - started
 
         log.progress("Confirming email address...")
         confirm = await in_page_post(tab, CONFIG.confirm_email, {"email": inbox, "code": secret_token})
         if not confirm or confirm.get("status") != 200:
             log.fail(f"Confirmation failed: {confirm}")
+            dashboard.advance(success=False)
+            dashboard.clear_thread(sequence)
             return False, time.time() - started
         log.confirm("Email confirmed")
 
@@ -74,6 +84,8 @@ async def run_single(sequence: int, total: int) -> tuple[bool, float]:
         challenge_token = await bypass_challenge(tab, log)
         if not challenge_token:
             log.fail("Challenge unsolved")
+            dashboard.advance(success=False)
+            dashboard.clear_thread(sequence)
             return False, time.time() - started
 
         log.progress("Registering account...")
@@ -90,32 +102,30 @@ async def run_single(sequence: int, total: int) -> tuple[bool, float]:
         positive = bool(registration and registration.get("status") == 200)
 
         if positive:
-            print(f"  Account registered successfully")
-            print(f"  Wall clock: {elapsed:.1f}s")
+            log.confirm(f"Account registered ({elapsed:.1f}s)")
             await persist_account(inbox, secret)
-            print(f"  Saved to {CONFIG.export_path}")
         else:
             code = registration.get("status") if registration else "?"
-            print(f"  Registration rejected (code {code})")
-            print(f"  Wall clock: {elapsed:.1f}s")
+            log.fail(f"Registration rejected (code {code}) ({elapsed:.1f}s)")
 
+        dashboard.advance(success=positive)
+        dashboard.clear_thread(sequence)
         return positive, elapsed
 
 
 async def orchestrate(tasks: int) -> None:
-    emit_banner()
-    print(f"\n>> Initiating {tasks} registration(s)...\n")
+    sem = asyncio.Semaphore(CONFIG.max_concurrency)
 
-    wins = 0
-    intervals = []
+    with Dashboard(total=tasks, threads=CONFIG.max_concurrency) as dash:
 
-    for idx in range(1, tasks + 1):
-        ok, elapsed = await run_single(idx, tasks)
-        intervals.append(elapsed)
-        if ok:
-            wins += 1
-        if idx < tasks:
-            print()
+        async def bounded_run(idx: int) -> tuple[bool, float]:
+            async with sem:
+                return await run_single(idx, tasks, dash)
+
+        results = await asyncio.gather(*(bounded_run(i) for i in range(1, tasks + 1)))
+
+    wins = sum(1 for ok, _ in results if ok)
+    intervals = [elapsed for _, elapsed in results]
 
     cumulative = sum(intervals)
     average = cumulative / len(intervals) if intervals else 0

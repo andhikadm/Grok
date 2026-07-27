@@ -51,6 +51,9 @@ class Settings:
     # Browser
     show_gui: bool = field(default_factory=lambda: os.getenv("SHOW_BROWSER", "False").lower() not in ("0", "false", "no", "off"))
 
+    # Concurrency
+    max_concurrency: int = int(os.getenv("CONCURRENCY", "3"))
+
     def __post_init__(self):
         self.token_matcher = re.compile(r"SpaceXAI confirmation code:\s*([A-Z0-9\-]+)")
 

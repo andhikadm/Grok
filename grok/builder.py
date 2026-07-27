@@ -4,8 +4,7 @@ import string
 
 _VOWEL_POOL = "aeiou"
 _CONSONANT_POOL = "bcdfghjklmnpqrstvwxyz"
-_CHAR_BANK = string.ascii_letters + string.digits + "!@#$%^&*"
-_SYMBOL_SET = "!@#$%^&*"
+_SYMBOL_SET = "!@#$%^&*?+=-"
 
 
 def _generate_name(lo: int = 4, hi: int = 7) -> str:
@@ -17,16 +16,24 @@ def _generate_name(lo: int = 4, hi: int = 7) -> str:
     return "".join(buf)
 
 
-def _generate_secret(size: int = 14) -> str:
-    while True:
-        candidate = "".join(secrets.choice(_CHAR_BANK) for _ in range(size))
-        if (any(ch.isupper() for ch in candidate)
-                and any(ch.islower() for ch in candidate)
-                and any(ch.isdigit() for ch in candidate)
-                and any(ch in _SYMBOL_SET for ch in candidate)):
-            return candidate
+def _generate_secret() -> str:
+    """
+    Generates a password matching the pattern:
+    - 3 letters (1 uppercase, 2 lowercase)
+    - 3 digits
+    - 2 lowercase letters
+    - 2 digits
+    - 2 symbols
+    Example: Fbr787pp48!!, Gup819xj91?+
+    """
+    p1 = secrets.choice(string.ascii_uppercase) + "".join(secrets.choice(string.ascii_lowercase) for _ in range(2))
+    p2 = "".join(secrets.choice(string.digits) for _ in range(3))
+    p3 = "".join(secrets.choice(string.ascii_lowercase) for _ in range(2))
+    p4 = "".join(secrets.choice(string.digits) for _ in range(2))
+    p5 = "".join(secrets.choice(_SYMBOL_SET) for _ in range(2))
+    return f"{p1}{p2}{p3}{p4}{p5}"
 
 
 def compose_identity() -> tuple[str, str, str]:
     """Returns (first_name, last_name, secret)."""
-    return _generate_name(4, 7), _generate_name(5, 8), _generate_secret(14)
+    return _generate_name(4, 7), _generate_name(5, 8), _generate_secret()
