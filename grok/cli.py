@@ -25,6 +25,26 @@ def resolve_target(argv: list[str]) -> int:
         print("Please enter a valid positive number")
 
 
+def resolve_threads(argv: list[str]) -> int:
+    """Obtain desired thread count from argument or prompt."""
+    if len(argv) >= 2:
+        try:
+            n = int(argv[1])
+            if n > 0:
+                return n
+        except ValueError:
+            pass
+
+    while True:
+        raw = input("How much thread? ").strip()
+        if raw.isdigit() and int(raw) > 0:
+            return int(raw)
+        print("Please enter a valid positive number")
+
+
 def entry() -> None:
     emit_banner()
-    asyncio.run(orchestrate(resolve_target(sys.argv[1:])))
+    target = resolve_target(sys.argv[1:])
+    threads = resolve_threads(sys.argv[1:])
+    CONFIG.max_concurrency = threads
+    asyncio.run(orchestrate(target))

@@ -16,7 +16,7 @@ from .archiver import persist_account
 async def run_single(sequence: int, total: int) -> tuple[bool, float]:
     """Execute one full registration cycle.  Returns (succeeded, elapsed)."""
     stamp = f"[{sequence}/{total}]"
-    log = Logger(stamp)
+    log = Logger(stamp, thread_index=sequence)
     started = time.time()
 
     # Build persona
@@ -90,32 +90,31 @@ async def run_single(sequence: int, total: int) -> tuple[bool, float]:
         positive = bool(registration and registration.get("status") == 200)
 
         if positive:
-            print(f"  Account registered successfully")
-            print(f"  Wall clock: {elapsed:.1f}s")
+            log.confirm("Account registered successfully")
+            log.confirm(f"Wall clock: {elapsed:.1f}s")
             await persist_account(inbox, secret)
-            print(f"  Saved to {CONFIG.export_path}")
+            log.confirm(f"Saved to {CONFIG.export_path}")
         else:
             code = registration.get("status") if registration else "?"
-            print(f"  Registration rejected (code {code})")
-            print(f"  Wall clock: {elapsed:.1f}s")
+            log.fail(f"Registration rejected (code {code})")
+            log.fail(f"Wall clock: {elapsed:.1f}s")
 
         return positive, elapsed
 
 
 async def orchestrate(tasks: int) -> None:
-    emit_banner()
-    print(f"\n>> Initiating {tasks} registration(s)...\n")
+    print(f">> Initiating {tasks} registration(s) (threads={CONFIG.max_concurrency})...\n")
 
-    wins = 0
-    intervals = []
+    sem = asyncio.Semaphore(CONFIG.max_concurrency)
 
-    for idx in range(1, tasks + 1):
-        ok, elapsed = await run_single(idx, tasks)
-        intervals.append(elapsed)
-        if ok:
-            wins += 1
-        if idx < tasks:
-            print()
+    async def bounded_run(idx: int) -> tuple[bool, float]:
+        async with sem:
+            return await run_single(idx, tasks)
+
+    results = await asyncio.gather(*(bounded_run(i) for i in range(1, tasks + 1)))
+
+    wins = sum(1 for ok, _ in results if ok)
+    intervals = [elapsed for _, elapsed in results]
 
     cumulative = sum(intervals)
     average = cumulative / len(intervals) if intervals else 0
