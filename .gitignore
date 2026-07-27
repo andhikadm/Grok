@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+sukses.txt
+accounts.txt
+.env
+*.log
+.DS_Store
+Thumbs.db
