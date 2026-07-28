@@ -1,5 +1,4 @@
 import secrets
-import random
 import string
 
 _VOWEL_POOL = "aeiou"
@@ -8,11 +7,11 @@ _SYMBOL_SET = "!@#$%^&*?+=-"
 
 
 def _generate_name(lo: int = 4, hi: int = 7) -> str:
-    length = random.randint(lo, hi)
-    buf = [random.choice(string.ascii_uppercase)]
+    length = secrets.randbelow(hi - lo + 1) + lo
+    buf = [secrets.choice(string.ascii_uppercase)]
     for _ in range(1, length):
         prev = buf[-1].lower()
-        buf.append(random.choice(_CONSONANT_POOL) if prev in _VOWEL_POOL else random.choice(_VOWEL_POOL))
+        buf.append(secrets.choice(_CONSONANT_POOL) if prev in _VOWEL_POOL else secrets.choice(_VOWEL_POOL))
     return "".join(buf)
 
 

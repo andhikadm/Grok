@@ -4,13 +4,17 @@ import time
 from colorama import Fore, Style
 
 from .settings import CONFIG
-from .output import Logger, Dashboard, emit_banner
+from .output import Logger, Dashboard
 from .builder import compose_identity
 from .mail_access import create_temp_address, retrieve_inbox, harvest_code
 from .navigator import ManagedSession
 from .requester_dispatch import in_page_post
 from .captcha_bypasser import bypass_challenge
 from .archiver import persist_account
+
+
+class _Abort(Exception):
+    """Raised inside run_single to break out to the common failure path."""
 
 
 async def run_single(
@@ -21,96 +25,110 @@ async def run_single(
     log = Logger(stamp, thread_index=sequence).bind(dashboard)
     started = time.time()
 
-    # Build persona
-    first, last, secret = compose_identity()
-    log.plain(f"Full Name: {first} {last}")
+    def _elapsed() -> float:
+        return time.time() - started
 
-    # Acquire mailbox
-    log.progress("Securing temporary mailbox...")
-    inbox_raw = create_temp_address()
-    if not inbox_raw or "email" not in inbox_raw:
-        log.fail("Could not obtain mailbox")
+    try:
+        # Build persona
+        first, last, secret = compose_identity()
+        log.plain(f"Full Name: {first} {last}")
+
+        # Acquire mailbox
+        log.progress("Securing temporary mailbox...")
+        try:
+            inbox_raw = await create_temp_address()
+        except Exception:
+            inbox_raw = None
+        if not inbox_raw or "email" not in inbox_raw:
+            raise _Abort("Could not obtain mailbox")
+        inbox = inbox_raw["email"]
+        log.confirm(f"Mailbox: {inbox}")
+
+        # Launch browser & execute sign-up sequence
+        async with ManagedSession() as driver:
+            tab = await driver.new_page()
+
+            log.progress("Loading target platform...")
+            await tab.goto(CONFIG.target_login, wait_until="load", timeout=30000)
+            await asyncio.sleep(2)
+
+            # Send verification code
+            log.progress("Dispatching verification request...")
+            dispatch = await in_page_post(tab, CONFIG.dispatch_code, {"email": inbox})
+            if not dispatch or dispatch.get("status") != 200:
+                raise _Abort(f"Dispatch rejected: {dispatch}")
+            log.confirm("Verification dispatched")
+
+            # Poll for verification code
+            log.progress("Awaiting confirmation token...")
+            verification_code = await _poll_for_code(inbox, log)
+            if not verification_code:
+                raise _Abort("Token never arrived")
+
+            # Confirm email
+            log.progress("Confirming email address...")
+            confirm = await in_page_post(
+                tab, CONFIG.confirm_email,
+                {"email": inbox, "code": verification_code},
+            )
+            if not confirm or confirm.get("status") != 200:
+                raise _Abort(f"Confirmation failed: {confirm}")
+            log.confirm("Email confirmed")
+
+            # Solve CAPTCHA
+            log.progress("Solving browser challenge...")
+            challenge_token = await bypass_challenge(tab, log)
+            if not challenge_token:
+                raise _Abort("Challenge unsolved")
+
+            # Register
+            log.progress("Registering account...")
+            registration = await in_page_post(tab, CONFIG.finish_signup, {
+                "email": inbox,
+                "password": secret,
+                "givenName": first,
+                "familyName": last,
+                "emailValidationCode": verification_code,
+                "turnstileToken": challenge_token,
+            })
+
+            elapsed = _elapsed()
+            positive = bool(registration and registration.get("status") == 200)
+
+            if positive:
+                log.confirm(f"Account registered ({elapsed:.1f}s)")
+                await persist_account(inbox, secret)
+            else:
+                code = registration.get("status") if registration else "?"
+                log.fail(f"Registration rejected (code {code}) ({elapsed:.1f}s)")
+
+            dashboard.advance(success=positive)
+            dashboard.clear_thread(sequence)
+            return positive, elapsed
+
+    except _Abort as exc:
+        log.fail(str(exc))
         dashboard.advance(success=False)
         dashboard.clear_thread(sequence)
-        return False, time.time() - started
-    inbox = inbox_raw["email"]
-    log.confirm(f"Mailbox: {inbox}")
+        return False, _elapsed()
 
-    # Launch browser & execute sign-up sequence
-    async with ManagedSession() as driver:
-        tab = await driver.new_page()
 
-        log.progress("Loading target platform...")
-        await tab.goto(CONFIG.target_login, wait_until="load", timeout=30000)
-        await asyncio.sleep(2)
-
-        log.progress("Dispatching verification request...")
-        dispatch = await in_page_post(tab, CONFIG.dispatch_code, {"email": inbox})
-        if not dispatch or dispatch.get("status") != 200:
-            log.fail(f"Dispatch rejected: {dispatch}")
-            dashboard.advance(success=False)
-            dashboard.clear_thread(sequence)
-            return False, time.time() - started
-        log.confirm("Verification dispatched")
-
-        log.progress("Awaiting confirmation token...")
-        secret_token, consumed = None, 0.0
-        while consumed < CONFIG.poll_deadline:
-            await asyncio.sleep(CONFIG.poll_delay)
-            consumed += CONFIG.poll_delay
-            log.progress(f"Scanning inbox... ({int(consumed)}s)")
-            mail = retrieve_inbox(inbox)
-            secret_token = harvest_code(mail)
-            if secret_token:
-                log.confirm(f"Token captured: {secret_token} ({int(consumed)}s)")
-                break
-
-        if not secret_token:
-            log.fail("Token never arrived")
-            dashboard.advance(success=False)
-            dashboard.clear_thread(sequence)
-            return False, time.time() - started
-
-        log.progress("Confirming email address...")
-        confirm = await in_page_post(tab, CONFIG.confirm_email, {"email": inbox, "code": secret_token})
-        if not confirm or confirm.get("status") != 200:
-            log.fail(f"Confirmation failed: {confirm}")
-            dashboard.advance(success=False)
-            dashboard.clear_thread(sequence)
-            return False, time.time() - started
-        log.confirm("Email confirmed")
-
-        log.progress("Solving browser challenge...")
-        challenge_token = await bypass_challenge(tab, log)
-        if not challenge_token:
-            log.fail("Challenge unsolved")
-            dashboard.advance(success=False)
-            dashboard.clear_thread(sequence)
-            return False, time.time() - started
-
-        log.progress("Registering account...")
-        registration = await in_page_post(tab, CONFIG.finish_signup, {
-            "email": inbox,
-            "password": secret,
-            "givenName": first,
-            "familyName": last,
-            "emailValidationCode": secret_token,
-            "turnstileToken": challenge_token,
-        })
-
-        elapsed = time.time() - started
-        positive = bool(registration and registration.get("status") == 200)
-
-        if positive:
-            log.confirm(f"Account registered ({elapsed:.1f}s)")
-            await persist_account(inbox, secret)
-        else:
-            code = registration.get("status") if registration else "?"
-            log.fail(f"Registration rejected (code {code}) ({elapsed:.1f}s)")
-
-        dashboard.advance(success=positive)
-        dashboard.clear_thread(sequence)
-        return positive, elapsed
+async def _poll_for_code(inbox: str, log: Logger) -> str | None:
+    """Poll the temporary mailbox until a verification code appears."""
+    deadline = time.time() + CONFIG.poll_deadline
+    while time.time() < deadline:
+        await asyncio.sleep(CONFIG.poll_delay)
+        elapsed = CONFIG.poll_deadline - (deadline - time.time())
+        log.progress(f"Scanning inbox... ({int(elapsed)}s)")
+        try:
+            mail = await retrieve_inbox(inbox)
+        except Exception:
+            mail = None
+        code = harvest_code(mail)
+        if code:
+            log.confirm(f"Token captured: {code} ({int(elapsed)}s)")
+            return code
+    return None
 
 
 async def orchestrate(tasks: int) -> None:

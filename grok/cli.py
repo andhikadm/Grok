@@ -1,8 +1,9 @@
 import asyncio
+import signal
 import sys
 
 from .settings import CONFIG
-from .output import Logger, emit_banner
+from .output import emit_banner
 from .procedural import orchestrate
 
 
@@ -19,7 +20,7 @@ def resolve_target(argv: list[str]) -> int:
         sys.exit(2)
 
     while True:
-        raw = input("How many accounts ? ").strip()
+        raw = input("How many accounts? ").strip()
         if raw.isdigit() and int(raw) > 0:
             return int(raw)
         print("Please enter a valid positive number")
@@ -36,10 +37,26 @@ def resolve_threads(argv: list[str]) -> int:
             pass
 
     while True:
-        raw = input("How much thread? ").strip()
+        raw = input("How many threads? ").strip()
         if raw.isdigit() and int(raw) > 0:
             return int(raw)
         print("Please enter a valid positive number")
+
+
+def _install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
+    """Cancel all running tasks on SIGINT/SIGTERM for clean shutdown."""
+
+    def _shutdown(sig: signal.Signals) -> None:
+        print(f"\n[!] Received {sig.name}, shutting down gracefully...")
+        for task in asyncio.all_tasks(loop):
+            task.cancel()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _shutdown, sig)
+        except NotImplementedError:
+            # Windows doesn't support add_signal_handler; fall back to signal.signal
+            signal.signal(sig, lambda s, f: _shutdown(signal.Signals(s)))
 
 
 def entry() -> None:
@@ -47,4 +64,14 @@ def entry() -> None:
     target = resolve_target(sys.argv[1:])
     threads = resolve_threads(sys.argv[1:])
     CONFIG.max_concurrency = threads
-    asyncio.run(orchestrate(target))
+
+    loop = asyncio.new_event_loop()
+    _install_signal_handlers(loop)
+    try:
+        loop.run_until_complete(orchestrate(target))
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        print("\n[!] Cancelled. Browser instances cleaned up.")
+    finally:
+        # Clean up remaining async generators / tasks
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
