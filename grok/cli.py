@@ -67,6 +67,28 @@ def _install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
             signal.signal(sig, lambda s, f: _shutdown(signal.Signals(s)))
 
 
+def _make_loop() -> asyncio.AbstractEventLoop:
+    """Create event loop with custom exception handler to suppress Playwright TargetClosedError."""
+    loop = asyncio.new_event_loop()
+
+    def _handle_exception(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+        exc = context.get("exception")
+        if exc is None:
+            return
+        # Suppress Playwright TargetClosedError — internal futures we can't await
+        exc_name = type(exc).__name__
+        if exc_name == "TargetClosedError" or "Target" in str(exc) and "closed" in str(exc):
+            return
+        # Suppress CancelledError during shutdown
+        if isinstance(exc, asyncio.CancelledError):
+            return
+        # Let everything else through
+        loop.default_exception_handler(context)
+
+    loop.set_exception_handler(_handle_exception)
+    return loop
+
+
 def entry() -> None:
     emit_banner()
     target = resolve_target(sys.argv[1:])
@@ -76,7 +98,7 @@ def entry() -> None:
     CONFIG.mail_mode = mode
     CONFIG.validate()
 
-    loop = asyncio.new_event_loop()
+    loop = _make_loop()
     _install_signal_handlers(loop)
     try:
         loop.run_until_complete(orchestrate(target))
