@@ -29,9 +29,12 @@ async def bypass_challenge(
     route = f"{origin}__rt_solver__"
 
     async def intercept(route_to_handle):
-        await route_to_handle.fulfill(
-            status=200, content_type="text/html", body=markup
-        )
+        try:
+            await route_to_handle.fulfill(
+                status=200, content_type="text/html", body=markup
+            )
+        except Exception:
+            pass
 
     await active_tab.route(route, intercept)
 

@@ -7,6 +7,7 @@ from .settings import CONFIG
 from .output import Logger, Dashboard
 from .builder import compose_identity
 from .mail_access import create_temp_address, retrieve_inbox, harvest_code
+from .imap_access import generate_imap_address, poll_imap_code
 from .navigator import ManagedSession
 from .requester_dispatch import in_page_post
 from .captcha_bypasser import bypass_challenge
@@ -35,14 +36,18 @@ async def run_single(
         log.plain(f"Full Name: {first} {last}")
 
         # Acquire mailbox
-        log.progress("Securing temporary mailbox...")
-        try:
-            inbox_raw = await create_temp_address()
-        except Exception:
-            inbox_raw = None
-        if not inbox_raw or "email" not in inbox_raw:
-            raise _Abort("Could not obtain mailbox")
-        inbox = inbox_raw["email"]
+        if CONFIG.mail_mode == "imap":
+            inbox = generate_imap_address()
+        else:
+            log.progress("Securing temporary mailbox...")
+            try:
+                inbox_raw = await create_temp_address()
+            except Exception:
+                inbox_raw = None
+            if not inbox_raw or "email" not in inbox_raw:
+                raise _Abort("Could not obtain mailbox")
+            inbox = inbox_raw["email"]
+
         log.confirm(f"Mailbox: {inbox}")
 
         # Launch browser & execute sign-up sequence
@@ -62,7 +67,11 @@ async def run_single(
 
             # Poll for verification code
             log.progress("Awaiting confirmation token...")
-            verification_code = await _poll_for_code(inbox, log)
+            if CONFIG.mail_mode == "imap":
+                verification_code = await poll_imap_code(inbox, CONFIG.poll_deadline, CONFIG.poll_delay, log)
+            else:
+                verification_code = await _poll_for_code(inbox, log)
+
             if not verification_code:
                 raise _Abort("Token never arrived")
 

@@ -35,7 +35,7 @@ async def in_page_post(
             ),
             timeout=timeout,
         )
-    except asyncio.TimeoutError:
+    except Exception:
         return None
     if raw is None:
         return None
