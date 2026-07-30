@@ -24,6 +24,7 @@ async def run_single(
     stamp = f"[{sequence}/{total}]"
     log = Logger(stamp, thread_index=sequence).bind(dashboard)
     started = time.time()
+    positive = False
 
     def _elapsed() -> float:
         return time.time() - started
@@ -102,15 +103,19 @@ async def run_single(
                 code = registration.get("status") if registration else "?"
                 log.fail(f"Registration rejected (code {code}) ({elapsed:.1f}s)")
 
-            dashboard.advance(success=positive)
-            dashboard.clear_thread(sequence)
             return positive, elapsed
 
     except _Abort as exc:
         log.fail(str(exc))
-        dashboard.advance(success=False)
-        dashboard.clear_thread(sequence)
         return False, _elapsed()
+
+    except Exception as exc:
+        log.fail(f"Unexpected error: {exc!r} ({_elapsed():.1f}s)")
+        return False, _elapsed()
+
+    finally:
+        dashboard.advance(success=positive)
+        dashboard.clear_thread(sequence)
 
 
 async def _poll_for_code(inbox: str, log: Logger) -> str | None:
@@ -131,6 +136,24 @@ async def _poll_for_code(inbox: str, log: Logger) -> str | None:
     return None
 
 
+async def _safe_run(
+    sequence: int, total: int, dashboard: Dashboard
+) -> tuple[bool, float]:
+    """Wrap run_single with a hard timeout so no task can hang forever."""
+    try:
+        return await asyncio.wait_for(
+            run_single(sequence, total, dashboard),
+            timeout=CONFIG.per_account_timeout,
+        )
+    except asyncio.TimeoutError:
+        stamp = f"[{sequence}/{total}]"
+        log = Logger(stamp, thread_index=sequence).bind(dashboard)
+        log.fail(f"Hard timeout ({CONFIG.per_account_timeout:.0f}s) — skipped")
+        dashboard.advance(success=False)
+        dashboard.clear_thread(sequence)
+        return False, CONFIG.per_account_timeout
+
+
 async def orchestrate(tasks: int) -> None:
     sem = asyncio.Semaphore(CONFIG.max_concurrency)
 
@@ -138,7 +161,7 @@ async def orchestrate(tasks: int) -> None:
 
         async def bounded_run(idx: int) -> tuple[bool, float]:
             async with sem:
-                return await run_single(idx, tasks, dash)
+                return await _safe_run(idx, tasks, dash)
 
         results = await asyncio.gather(*(bounded_run(i) for i in range(1, tasks + 1)))
 

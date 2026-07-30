@@ -74,6 +74,10 @@ class Settings:
     max_concurrency: int = field(
         default_factory=lambda: int(os.getenv("CONCURRENCY", "3")))
 
+    # Per-account hard timeout (seconds)
+    per_account_timeout: float = field(
+        default_factory=lambda: float(os.getenv("ACCOUNT_TIMEOUT", "180")))
+
     def __post_init__(self):
         self.token_matcher = re.compile(r"SpaceXAI confirmation code:\s*([A-Z0-9\-]+)")
 
