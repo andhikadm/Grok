@@ -36,6 +36,10 @@ def _suppress_pipe_noise(hook_args):
     err = hook_args.exc_value
     if isinstance(err, ValueError) and "closed pipe" in str(err):
         return
+    # Suppress Playwright TargetClosedError surfacing via __del__ / gc
+    err_name = type(err).__name__ if err else ""
+    if err_name == "TargetClosedError":
+        return
     _original_hook(hook_args)
 
 
