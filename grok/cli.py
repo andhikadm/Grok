@@ -83,6 +83,16 @@ def entry() -> None:
     except (asyncio.CancelledError, KeyboardInterrupt):
         print("\n[!] Cancelled. Browser instances cleaned up.")
     finally:
+        # Cancel and wait for all remaining tasks to complete to avoid Playwright pending task errors
+        try:
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                # Run loop until all cancelled tasks are done (suppress cancelled exceptions)
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        except Exception:
+            pass
         # Clean up remaining async generators / tasks
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()

@@ -36,7 +36,11 @@ async def bypass_challenge(
         except Exception:
             pass
 
-    await active_tab.route(route, intercept)
+    try:
+        await active_tab.route(route, intercept)
+    except Exception:
+        logger.fail("Browser closed before challenge setup")
+        return None
 
     try:
         try:
@@ -53,14 +57,19 @@ async def bypass_challenge(
             except Exception:
                 pass
 
-            candidate = await active_tab.evaluate(
-                """
-                () => {
-                    const el = document.querySelector('input[name="cf-turnstile-response"]');
-                    return el && el.value && el.value.length > 30 ? el.value : null;
-                }
-                """
-            )
+            try:
+                candidate = await active_tab.evaluate(
+                    """
+                    () => {
+                        const el = document.querySelector('input[name="cf-turnstile-response"]');
+                        return el && el.value && el.value.length > 30 ? el.value : null;
+                    }
+                    """
+                )
+            except Exception:
+                logger.fail("Browser closed during challenge")
+                return None
+
             if candidate:
                 spent = time.time() - begin
                 logger.confirm(f"Challenge solved in {spent:.1f}s")
