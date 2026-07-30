@@ -32,31 +32,33 @@ grok/
 ```bash
 pip install -r requirements.txt
 camoufox fetch
+cp .env.example .env   # fill in your values
 ```
 
 ## Usage
 
 ```bash
 python main.py
-# Prompts: How many registrations?
+# Prompts: How many registrations? How many threads?
 
-python main.py 3
-# Non-interactive, three registrations
+python main.py 3 2
+# Non-interactive, three registrations with 2 threads
 ```
 
 ## Configuration
 
-Env vars override defaults:
+Copy `.env.example` to `.env` and fill in the **required** values:
 
-| Variable | Default |
-|----------|---------|
-| `MAIL_ORIGIN` | `https://mail.cskh-group.com` |
-| `MAILBOX_DOMAIN` | `vin-groupvn.com` |
-| `EXPORT_PATH` | `accounts.txt` |
-| `SHOW_BROWSER` | `False` |
-| `CAPTCHA_KEY` | `0x4AAAAAAAhr9JGVDZbrZOo0` |
-| `POLL_MAX` | `60` |
-| `CAPTCHA_WINDOW` | `25` |
+| Variable | Required | Default |
+|----------|----------|---------|
+| `MAIL_ORIGIN` | **Yes** | — |
+| `MAILBOX_DOMAIN` | **Yes** | — |
+| `CAPTCHA_KEY` | **Yes** | — |
+| `EXPORT_PATH` | No | `accounts.txt` |
+| `SHOW_BROWSER` | No | `False` |
+| `CONCURRENCY` | No | `3` |
+| `POLL_MAX` | No | `60` |
+| `CAPTCHA_WINDOW` | No | `25` |
 
 ## Output
 
