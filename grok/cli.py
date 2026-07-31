@@ -2,7 +2,7 @@ import asyncio
 import signal
 import sys
 
-from rich.prompt import Prompt, IntPrompt, Confirm
+from rich.prompt import Prompt, IntPrompt
 
 from .settings import CONFIG
 from .output import emit_banner
@@ -44,21 +44,11 @@ def resolve_mail_mode(argv: list[str]) -> str:
         if mode in ("api", "imap"):
             return mode
 
-    print("\n[bold]Select mail mode:[/bold]")
+    print("Select mail mode:")
     print(" 1. Temp-Mail API")
     print(" 2. IMAP (Personal catch-all)")
     choice = Prompt.ask("Choose mode", choices=["1", "2"])
     return "api" if choice == "1" else "imap"
-
-
-def resolve_inject_mode(argv: list[str]) -> bool:
-    """Obtain inject decision from argument or prompt."""
-    if len(argv) >= 4:
-        val = argv[3].lower().strip()
-        if val in ("true", "yes", "y", "1"):
-            return True
-        return False
-    return Confirm.ask("Inject successful accounts into 9Router DB?", default=False)
 
 
 def _install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
@@ -104,10 +94,8 @@ def entry() -> None:
     target = resolve_target(sys.argv[1:])
     threads = resolve_threads(sys.argv[1:])
     mode = resolve_mail_mode(sys.argv[1:])
-    inject = resolve_inject_mode(sys.argv[1:])
     CONFIG.max_concurrency = threads
     CONFIG.mail_mode = mode
-    CONFIG.auto_inject_9router = inject
     CONFIG.validate()
 
     loop = _make_loop()

@@ -111,11 +111,6 @@ class Settings:
     per_account_timeout: float = field(
         default_factory=lambda: float(os.getenv("ACCOUNT_TIMEOUT", "180")))
 
-    # Inject to 9Router database
-    auto_inject_9router: bool = False
-    ninerouter_db_path: str = field(
-        default_factory=lambda: os.path.expandvars(os.getenv("NINEROUTER_DB", r"%APPDATA%\9router\db\data.sqlite")))
-
     def __post_init__(self):
         self.token_matcher = re.compile(r"SpaceXAI confirmation code:\s*([A-Z0-9\-]+)")
         # Do not auto-validate here so cli can change mail_mode first
