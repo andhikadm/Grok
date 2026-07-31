@@ -113,44 +113,6 @@ async def run_single(
 
             if positive:
                 log.confirm(f"Account registered ({elapsed:.1f}s)")
-                # Go to main console first to trigger any onboarding/TOS accept if needed
-                log.progress("Loading console dashboard...")
-                try:
-                    await tab.goto("https://console.x.ai", wait_until="domcontentloaded", timeout=30000)
-                    await asyncio.sleep(3)
-                    console_url = tab.url
-                    console_text = await tab.evaluate("() => document.body.innerText")
-                    log.plain(f"Dashboard URL: {console_url}")
-                    log.plain(f"Page text: {console_text[:500].replace(chr(10), ' ')}")
-                    buttons = await tab.evaluate("() => Array.from(document.querySelectorAll('button')).map(b => b.innerText)")
-                    log.plain(f"Buttons found: {', '.join(buttons)}")
-                    # Try to click any accept/agree/continue/confirm/start button
-                    inputs = await tab.evaluate("() => Array.from(document.querySelectorAll('input')).map(i => ({type: i.type, placeholder: i.placeholder, name: i.name}))")
-                    log.plain(f"Inputs found on welcome: {inputs}")
-
-                    # Fill team name if input exists
-                    team_input = tab.locator('input[type="text"], input[placeholder*="team"], input[placeholder*="Team"]').first
-                    if await team_input.count() > 0:
-                        log.progress("Filling team name...")
-                        await team_input.fill(f"{first} Team")
-                        await asyncio.sleep(0.5)
-
-                    # Click a role option (e.g. Engineer or Hobbyist)
-                    role_btn = tab.locator('button:has-text("Engineer"), button:has-text("Hobbyist")').first
-                    if await role_btn.count() > 0:
-                        log.progress("Selecting role...")
-                        await role_btn.click()
-                        await asyncio.sleep(0.5)
-
-                    agree_btn = tab.locator('button:has-text("Agree"), button:has-text("Accept"), button:has-text("Continue"), button:has-text("Next"), button:has-text("Get Started"), button:has-text("Confirm")').first
-                    if await agree_btn.count() > 0 and await agree_btn.is_enabled(timeout=1000):
-                        log.progress("Clicking onboarding button...")
-                        await agree_btn.click(timeout=1500)
-                        await asyncio.sleep(5) # Wait longer for navigation/creation
-                        log.plain(f"URL after onboarding click: {tab.url}")
-                except Exception as e:
-                    log.alert(f"Dashboard navigation/onboarding failed: {e!r}")
-
                 # Tulis ke file
                 await persist_account(inbox, secret)
             else:
