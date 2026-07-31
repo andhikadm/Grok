@@ -26,10 +26,10 @@ def _style_for(index: int) -> str:
 
 # ── Status icons ──
 _ICONS = {
-    "progress": "[yellow]⟳[/yellow]",
-    "confirm":  "[green]✓[/green]",
-    "fail":     "[red]✗[/red]",
-    "plain":    "[white]●[/white]",
+    "progress": "[yellow]*[/yellow]",
+    "confirm":  "[green]V[/green]",
+    "fail":     "[red]X[/red]",
+    "plain":    "[white]-[/white]",
     "alert":    "[yellow]![/yellow]",
 }
 
@@ -96,7 +96,7 @@ class Dashboard:
             self._progress.update(
                 self._task_id,
                 completed=self._completed,
-                info=f"{self._threads}T  {self._success}✓  {self._completed - self._success}✗",
+                info=f"{self._threads}T  {self._success}V  {self._completed - self._success}X",
             )
             self._refresh()
 
@@ -169,13 +169,16 @@ class Logger:
 
 
 def emit_banner() -> None:
-    artwork = f"""
-{Fore.CYAN} ██████╗ ██████╗  ██████╗ ██╗  ██╗    ████████╗ ██████╗  ██████╗ ██╗     
-██╔════╝ ██╔══██╗██╔═══██╗██║ ██╔╝    ╚══██╔══╝██╔═══██╗██╔═══██╗██║     
-██║  ███╗██████╔╝██║   ██║█████╔╝        ██║   ██║   ██║██║   ██║██║     
-██║   ██║██╔══██╗██║   ██║██╔═██╗        ██║   ██║   ██║██║   ██║██║     
-╚██████╔╝██║  ██║╚██████╔╝██║  ██╗       ██║   ╚██████╔╝╚██████╔╝███████╗
- ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝       ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝
-                                                                         {Style.RESET_ALL}
+    artwork = fr"""
+{Fore.CYAN}  ____               _  __
+ / ___|_ __ ___   __| |/ /
+| |  _| '__/ _ \ / _` ' /
+| |_| | | | (_) | (_| . \
+ \____|_|  \___/ \__,_|\_\
+                           {Style.RESET_ALL}
 """
-    print(artwork)
+    try:
+        print(artwork)
+    except Exception:
+        # Fallback if terminal can't print ANSI/Unicode
+        print("=== GroK Account Creator ===")
