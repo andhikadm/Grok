@@ -44,7 +44,7 @@ def resolve_mail_mode(argv: list[str]) -> str:
         if mode in ("api", "imap"):
             return mode
 
-    print("\n[bold]Select mail mode:[/bold]")
+    print("Select mail mode:")
     print(" 1. Temp-Mail API")
     print(" 2. IMAP (Personal catch-all)")
     choice = Prompt.ask("Choose mode", choices=["1", "2"])

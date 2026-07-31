@@ -1,6 +1,12 @@
 import asyncio
 import sys
 import time
+import base64
+import hashlib
+import secrets
+import urllib.parse
+import urllib.request
+import json
 from colorama import Fore, Style
 
 from .settings import CONFIG
@@ -107,6 +113,7 @@ async def run_single(
 
             if positive:
                 log.confirm(f"Account registered ({elapsed:.1f}s)")
+                # Tulis ke file
                 await persist_account(inbox, secret)
             else:
                 code = registration.get("status") if registration else "?"
@@ -166,13 +173,22 @@ async def _safe_run(
 async def orchestrate(tasks: int) -> None:
     sem = asyncio.Semaphore(CONFIG.max_concurrency)
 
-    with Dashboard(total=tasks, threads=CONFIG.max_concurrency) as dash:
+    # Bypass dashboard for single task to print direct logs to console
+    if tasks == 1:
+        class DummyDashboard:
+            def advance(self, success: bool): pass
+            def clear_thread(self, idx: int): pass
+            def set_status(self, idx: int, kind: str, msg: str):
+                print(f"[{kind.upper()}] {msg}")
 
-        async def bounded_run(idx: int) -> tuple[bool, float]:
-            async with sem:
-                return await _safe_run(idx, tasks, dash)
-
-        results = await asyncio.gather(*(bounded_run(i) for i in range(1, tasks + 1)))
+        dash = DummyDashboard()
+        results = [await run_single(1, 1, dash)]
+    else:
+        with Dashboard(total=tasks, threads=CONFIG.max_concurrency) as dash:
+            async def bounded_run(idx: int) -> tuple[bool, float]:
+                async with sem:
+                    return await _safe_run(idx, tasks, dash)
+            results = await asyncio.gather(*(bounded_run(i) for i in range(1, tasks + 1)))
 
     wins = sum(1 for ok, _ in results if ok)
     intervals = [elapsed for _, elapsed in results]
